@@ -1,0 +1,139 @@
+name: Build DXVK aarch64
+
+on:
+  workflow_dispatch:
+    inputs:
+      dxvk_ref:
+        description: "DXVK git ref/tag"
+        required: true
+        default: "v3.0"
+      llvm_mingw_tag:
+        description: "llvm-mingw release tag"
+        required: true
+        default: "20260616"
+
+jobs:
+  build:
+    name: Build DXVK ${{ inputs.dxvk_ref }} for Windows ARM64
+    runs-on: ubuntu-22.04
+
+    env:
+      DXVK_REF: ${{ inputs.dxvk_ref }}
+      LLVM_MINGW_TAG: ${{ inputs.llvm_mingw_tag }}
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            git \
+            curl \
+            xz-utils \
+            tar \
+            zip \
+            file \
+            python3 \
+            python3-pip \
+            meson \
+            ninja-build \
+            pkg-config \
+            glslang-tools \
+            gh
+
+      - name: Download llvm-mingw toolchain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+
+          mkdir -p "$HOME/toolchains"
+
+          gh release download "$LLVM_MINGW_TAG" \
+            --repo mstorsjo/llvm-mingw \
+            --pattern "llvm-mingw-${LLVM_MINGW_TAG}-ucrt-ubuntu-22.04-x86_64.tar.xz" \
+            --dir "$HOME/toolchains"
+
+          tar -xf "$HOME/toolchains/llvm-mingw-${LLVM_MINGW_TAG}-ucrt-ubuntu-22.04-x86_64.tar.xz" \
+            -C "$HOME/toolchains"
+
+          echo "$HOME/toolchains/llvm-mingw-${LLVM_MINGW_TAG}-ucrt-ubuntu-22.04-x86_64/bin" >> "$GITHUB_PATH"
+
+      - name: Check cross compiler
+        run: |
+          set -eux
+          which aarch64-w64-mingw32-clang
+          which aarch64-w64-mingw32-clang++
+          which aarch64-w64-mingw32-windres
+          which aarch64-w64-mingw32-widl
+          aarch64-w64-mingw32-clang --version
+
+      - name: Clone DXVK source
+        run: |
+          set -eux
+          git clone --recursive --branch "$DXVK_REF" https://github.com/doitsujin/dxvk.git dxvk
+          cd dxvk
+          git submodule update --init --recursive
+
+      - name: Create aarch64 Meson cross file
+        working-directory: dxvk
+        run: |
+          cat > build-winarm64.txt <<'EOF'
+          [binaries]
+          c = 'aarch64-w64-mingw32-clang'
+          cpp = 'aarch64-w64-mingw32-clang++'
+          ar = 'aarch64-w64-mingw32-ar'
+          strip = 'aarch64-w64-mingw32-strip'
+          windres = 'aarch64-w64-mingw32-windres'
+          widl = 'aarch64-w64-mingw32-widl'
+          
+          [properties]
+          needs_exe_wrapper = true
+          
+          [host_machine]
+          system = 'windows'
+          cpu_family = 'aarch64'
+          cpu = 'aarch64'
+          endian = 'little'
+          EOF
+
+          cat build-winarm64.txt
+
+      - name: Build DXVK aarch64
+        working-directory: dxvk
+        run: |
+          set -eux
+
+          meson setup build.aarch64 \
+            --cross-file build-winarm64.txt \
+            --buildtype release \
+            --prefix "$PWD/pkg" \
+            --bindir aarch64 \
+            --libdir aarch64 \
+            --strip \
+            -Db_ndebug=if-release \
+            -Dbuild_id=false
+
+          ninja -C build.aarch64 install
+
+      - name: Package DLLs
+        working-directory: dxvk
+        run: |
+          set -eux
+
+          OUT_NAME="dxvk-${DXVK_REF#v}-aarch64"
+          mkdir -p "dist/$OUT_NAME/aarch64"
+
+          cp pkg/aarch64/*.dll "dist/$OUT_NAME/aarch64/"
+          cp LICENSE "dist/$OUT_NAME/"
+          cp dxvk.conf "dist/$OUT_NAME/"
+
+          file "dist/$OUT_NAME/aarch64/"*.dll | tee "dist/$OUT_NAME/file-info.txt"
+
+          cd dist
+          zip -r "$OUT_NAME.zip" "$OUT_NAME"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dxvk-${{ inputs.dxvk_ref }}-aarch64
+          path: dxvk/dist/*.zip
