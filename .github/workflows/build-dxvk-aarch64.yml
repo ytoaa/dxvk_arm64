@@ -150,6 +150,9 @@ jobs:
           DXVK_VERSION="${DXVK_REF#v}"
           OUT_NAME="dxvk-${DXVK_VERSION}-aarch64"
 
+          echo "DXVK_VERSION=${DXVK_VERSION}" >> "$GITHUB_ENV"
+          echo "DXVK_OUT_NAME=${OUT_NAME}" >> "$GITHUB_ENV"
+
           mkdir -p "dist/${OUT_NAME}/aarch64"
 
           cp pkg/aarch64/*.dll "dist/${OUT_NAME}/aarch64/"
@@ -167,33 +170,36 @@ jobs:
           cd dist
           zip -r "${OUT_NAME}.zip" "${OUT_NAME}"
 
-      - name: Upload artifact
+      - name: Upload unpacked artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dxvk-${{ inputs.dxvk_ref }}-aarch64
-          path: dxvk/dist/*.zip
+          name: ${{ env.DXVK_OUT_NAME }}
+          path: dxvk/dist/${{ env.DXVK_OUT_NAME }}
           if-no-files-found: error
 
       - name: Publish GitHub Release asset
         if: ${{ inputs.publish_release == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -eux
 
-          DXVK_VERSION="${DXVK_REF#v}"
-          RELEASE_TAG="dxvk-${DXVK_VERSION}-aarch64"
+          RELEASE_TAG="${DXVK_OUT_NAME}"
           RELEASE_TITLE="DXVK ${DXVK_REF} aarch64"
-          ZIP_PATH="dxvk/dist/dxvk-${DXVK_VERSION}-aarch64.zip"
+          ZIP_PATH="dxvk/dist/${DXVK_OUT_NAME}.zip"
 
           test -f "$ZIP_PATH"
 
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+          if gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
             echo "Release already exists: $RELEASE_TAG"
           else
             gh release create "$RELEASE_TAG" \
+              --repo "$GH_REPO" \
               --title "$RELEASE_TITLE" \
               --notes "DXVK ${DXVK_REF} built for Windows ARM64 / aarch64 using llvm-mingw ${LLVM_MINGW_TAG}."
           fi
 
-          gh release upload "$RELEASE_TAG" "$ZIP_PATH" --clobber
+          gh release upload "$RELEASE_TAG" "$ZIP_PATH" \
+            --repo "$GH_REPO" \
+            --clobber
