@@ -11,9 +11,17 @@ on:
         description: "llvm-mingw release tag"
         required: true
         default: "20260616"
+      publish_release:
+        description: "Upload zip to GitHub Release"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -23,6 +31,7 @@ jobs:
     env:
       DXVK_REF: ${{ inputs.dxvk_ref }}
       LLVM_MINGW_TAG: ${{ inputs.llvm_mingw_tag }}
+      PUBLISH_RELEASE: ${{ inputs.publish_release }}
 
     steps:
       - name: Install build dependencies
@@ -164,3 +173,27 @@ jobs:
           name: dxvk-${{ inputs.dxvk_ref }}-aarch64
           path: dxvk/dist/*.zip
           if-no-files-found: error
+
+      - name: Publish GitHub Release asset
+        if: ${{ inputs.publish_release == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+
+          DXVK_VERSION="${DXVK_REF#v}"
+          RELEASE_TAG="dxvk-${DXVK_VERSION}-aarch64"
+          RELEASE_TITLE="DXVK ${DXVK_REF} aarch64"
+          ZIP_PATH="dxvk/dist/dxvk-${DXVK_VERSION}-aarch64.zip"
+
+          test -f "$ZIP_PATH"
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release already exists: $RELEASE_TAG"
+          else
+            gh release create "$RELEASE_TAG" \
+              --title "$RELEASE_TITLE" \
+              --notes "DXVK ${DXVK_REF} built for Windows ARM64 / aarch64 using llvm-mingw ${LLVM_MINGW_TAG}."
+          fi
+
+          gh release upload "$RELEASE_TAG" "$ZIP_PATH" --clobber
