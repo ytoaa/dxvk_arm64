@@ -42,7 +42,6 @@ namespace dxvk {
     VkBool32 renderPassClearFormatBug   : 1;
     VkBool32 renderPassResolveFormatBug : 1;
     VkBool32 preferRenderPassOps        : 1;
-    VkBool32 preferPrimaryCmdBufs       : 1;
     VkBool32 preferComputeMipGen        : 1;
     VkBool32 preferDescriptorByteOffsets: 1;
     VkBool32 preferCachedMemory         : 1;
@@ -283,12 +282,6 @@ namespace dxvk {
      * \returns \c true if all required features are supported.
      */
     bool canUseGraphicsPipelineLibrary() const;
-
-    /**
-     * \brief Checks whether pipeline creation cache control can be used
-     * \returns \c true if all required features are supported.
-     */
-    bool canUsePipelineCacheControl() const;
 
     /**
      * \brief Checks whether sample locations can be used
